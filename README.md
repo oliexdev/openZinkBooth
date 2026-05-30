@@ -2,6 +2,10 @@
 
 An easy-to-use photo booth app for capturing and instantly printing photos with HP Sprocket
 
+<a href="https://f-droid.org/repository/browse/?fdid=com.photo.openzinkbooth" target="_blank">
+  <img src="https://f-droid.org/badge/get-it-on.png" alt="Get it on F-Droid" height="80"/>
+</a>
+
 > [!NOTE]
 > For the latest development state, install the latest [openZinkBooth dev](https://github.com/oliexdev/openZinkBooth/releases/tag/dev-build) build from the [GitHub release page](https://github.com/oliexdev/openZinkBooth/releases).
 > Please be aware that the development version, may contain bugs, and will not receive automatic updates.
