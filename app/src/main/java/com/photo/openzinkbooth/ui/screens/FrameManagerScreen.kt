@@ -50,6 +50,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import com.photo.openzinkbooth.R
 import com.photo.openzinkbooth.core.database.FrameEntry
+import com.photo.openzinkbooth.core.database.sanitizeFrameName
 import com.photo.openzinkbooth.ui.components.composeFrameThumbnail
 
 // ---------------------------------------------------------------------------
@@ -244,28 +245,36 @@ fun FrameManagerScreen(
     // ── Add dialog ────────────────────────────────────────────────────────────
     if (showAddDialog && pendingUri != null) {
         var name by remember { mutableStateOf("") }
+        // Reject a name that maps to an already-existing custom frame.
+        val isDuplicate = sanitizeFrameName(name.trim()).let { s ->
+            s.isNotEmpty() && entries.any { it is FrameEntry.Custom && it.filename == s }
+        }
         AlertDialog(
             onDismissRequest = { showAddDialog = false; pendingUri = null },
             icon    = { Icon(Icons.Outlined.PhotoFilter, contentDescription = null) },
             title   = { Text(stringResource(R.string.frame_manager_add_title)) },
             text    = {
                 OutlinedTextField(
-                    value         = name,
-                    onValueChange = { name = it },
-                    label         = { Text(stringResource(R.string.frame_manager_name_label)) },
-                    singleLine    = true,
-                    modifier      = Modifier.fillMaxWidth()
+                    value          = name,
+                    onValueChange  = { name = it },
+                    label          = { Text(stringResource(R.string.frame_manager_name_label)) },
+                    singleLine     = true,
+                    isError        = isDuplicate,
+                    supportingText = if (isDuplicate) {
+                        { Text(stringResource(R.string.frame_manager_name_exists)) }
+                    } else null,
+                    modifier       = Modifier.fillMaxWidth()
                 )
             },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        if (name.isNotBlank()) {
+                        if (name.isNotBlank() && !isDuplicate) {
                             onAddCustom(pendingUri!!, name.trim())
                             showAddDialog = false; pendingUri = null
                         }
                     },
-                    enabled = name.isNotBlank()
+                    enabled = name.isNotBlank() && !isDuplicate
                 ) { Text(stringResource(R.string.frame_manager_add_confirm)) }
             },
             dismissButton = {
@@ -279,28 +288,38 @@ fun FrameManagerScreen(
     // ── Rename dialog ─────────────────────────────────────────────────────────
     renameTarget?.let { entry ->
         var name by remember(entry) { mutableStateOf(entry.filename) }
+        // Reject a name that maps to a *different* existing custom frame
+        // (keeping the entry's own name is fine — that's a no-op rename).
+        val isDuplicate = sanitizeFrameName(name.trim()).let { s ->
+            s.isNotEmpty() && s != entry.filename &&
+                entries.any { it is FrameEntry.Custom && it.filename == s }
+        }
         AlertDialog(
             onDismissRequest = { renameTarget = null },
             icon    = { Icon(Icons.Outlined.Edit, contentDescription = null) },
             title   = { Text(stringResource(R.string.frame_manager_rename_title)) },
             text    = {
                 OutlinedTextField(
-                    value         = name,
-                    onValueChange = { name = it },
-                    label         = { Text(stringResource(R.string.frame_manager_name_label)) },
-                    singleLine    = true,
-                    modifier      = Modifier.fillMaxWidth()
+                    value          = name,
+                    onValueChange  = { name = it },
+                    label          = { Text(stringResource(R.string.frame_manager_name_label)) },
+                    singleLine     = true,
+                    isError        = isDuplicate,
+                    supportingText = if (isDuplicate) {
+                        { Text(stringResource(R.string.frame_manager_name_exists)) }
+                    } else null,
+                    modifier       = Modifier.fillMaxWidth()
                 )
             },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        if (name.isNotBlank()) {
+                        if (name.isNotBlank() && !isDuplicate) {
                             onRename(entry.filename, name.trim())
                             renameTarget = null
                         }
                     },
-                    enabled = name.isNotBlank()
+                    enabled = name.isNotBlank() && !isDuplicate
                 ) { Text(stringResource(R.string.frame_manager_rename_confirm)) }
             },
             dismissButton = {

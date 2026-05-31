@@ -121,6 +121,7 @@
     <string name="frame_manager_add">Add custom frame</string>
     <string name="frame_manager_add_title">Name your frame</string>
     <string name="frame_manager_name_label">Frame name</string>
+    <string name="frame_manager_name_exists">A frame with this name already exists.</string>
     <string name="frame_manager_add_confirm">Add</string>
     <string name="frame_manager_rename_title">Rename frame</string>
     <string name="frame_manager_rename_confirm">Rename</string>

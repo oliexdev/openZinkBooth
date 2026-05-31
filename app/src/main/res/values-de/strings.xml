@@ -120,6 +120,7 @@
     <string name="frame_manager_add">Eigenen Rahmen hinzufügen</string>
     <string name="frame_manager_add_title">Rahmen benennen</string>
     <string name="frame_manager_name_label">Name</string>
+    <string name="frame_manager_name_exists">Ein Rahmen mit diesem Namen existiert bereits.</string>
     <string name="frame_manager_add_confirm">Hinzufügen</string>
     <string name="frame_manager_rename_title">Rahmen umbenennen</string>
     <string name="frame_manager_rename_confirm">Umbenennen</string>
