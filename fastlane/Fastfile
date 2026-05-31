@@ -60,9 +60,11 @@ platform :android do
         )
         gradle(
             task: "bundle",
-            build_type: "OSS"
+            build_type: "oss"
         )
-        upload_to_play_store
+        upload_to_play_store(
+            aab: "app/build/outputs/bundle/oss/openZinkBooth-#{versionName}-oss.aab"
+        )
     end
 
     desc "Deploy a new version to GitHub"

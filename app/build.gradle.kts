@@ -1,3 +1,4 @@
+import java.io.File
 import java.util.Properties
 
 plugins {
@@ -95,12 +96,34 @@ android {
     }
 }
 
+val appVersionName = android.defaultConfig.versionName
+
 androidComponents {
     onVariants { variant ->
         variant.outputs.forEach { output ->
             if (output is com.android.build.api.variant.impl.VariantOutputImpl) {
-                output.outputFileName.set("openZinkBooth-${variant.name}.apk")
+                output.outputFileName.set(
+                    if (variant.name == "debug")
+                        "openZinkBooth-debug.apk"
+                    else
+                        "openZinkBooth-$appVersionName-${variant.name}.apk"
+                )
             }
+        }
+    }
+}
+
+listOf("release", "oss").forEach { variantName ->
+    val bundleTask = "bundle${variantName.replaceFirstChar { it.uppercase() }}"
+    tasks.matching { it.name == bundleTask }.configureEach {
+        doLast {
+            val bundleDir = layout.buildDirectory.dir("outputs/bundle/$variantName").get().asFile
+            val target = File(bundleDir, "openZinkBooth-$appVersionName-$variantName.aab")
+            bundleDir.listFiles { f -> f.extension == "aab" && f.name != target.name }
+                ?.forEach { aab ->
+                    aab.copyTo(target, overwrite = true)
+                    aab.delete()
+                }
         }
     }
 }
