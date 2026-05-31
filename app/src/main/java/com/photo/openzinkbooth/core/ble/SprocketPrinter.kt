@@ -385,6 +385,15 @@ class SprocketPrinter(private val context: Context) {
                 connectSuspending(peripheral)
             } catch (e: Exception) {
                 LogManager.e(TAG, "Connection error: ${e.message}")
+                // Tear down any half-open BLE link (e.g. BLE handshake succeeded
+                // but RFCOMM did not) so we are left in a clean, fully-disconnected
+                // state rather than holding a dangling GATT connection.
+                try { centralManager.cancelConnection(peripheral) } catch (_: Exception) {}
+                control.disconnect()
+                activePeripheral = null
+                writeChar = null
+                rxBuffer.reset()
+                rxPreviousSeq = 0
                 _state.value = SprocketState.Error(e.message ?: "Connection failed")
             }
         }
@@ -436,29 +445,29 @@ class SprocketPrinter(private val context: Context) {
         checkNotError(connSetupRsp, "CONN_SETUP")
         parseConnSetupRsp(connSetupRsp)
 
-        // Session is fully established — announce Ready.
+        // --- Step 5: Open BT Classic RFCOMM socket for settings + printing ---
+        // Printing and all settings run exclusively over RFCOMM, so if this
+        // channel fails the printer is not actually usable. Treat the failure as
+        // fatal and let it propagate: connect()/handleUnexpectedDisconnect() then
+        // report it as a failed session (and retry) instead of leaving the UI in a
+        // misleading "Ready" state that silently swallows every print job.
+        // control.connect() also loads identity and config internally.
+        //
+        // BluetoothAdapter.getDefaultAdapter() is deprecated since API 31.
+        // Use BluetoothManager via context.getSystemService() instead.
+        val btAdapter = context.getSystemService(android.bluetooth.BluetoothManager::class.java)
+            ?.adapter
+            ?: throw Exception("BluetoothAdapter unavailable")
+        val btDevice = btAdapter.getRemoteDevice(peripheral.address)
+        control.connect(btDevice)
+
+        // Both BLE and RFCOMM channels are up — only now is the session usable.
         _state.value = SprocketState.Ready(_detectedModel)
         LogManager.d(TAG, "Session ready: model=${_detectedModel.name} " +
                 "frameMtu=$bleFrameMtu msgSize=$targetMaxMessageSize ackPeriod=$upstreamAckPeriod")
 
         // Start the connection monitor now that we are in Ready state.
         startConnectionMonitor(peripheral)
-
-        // --- Step 5: Open BT Classic RFCOMM socket for settings + printing ---
-        // control.connect() loads identity and config internally.
-        // Runs on a background thread; errors are non-fatal (BLE still works).
-        try {
-            // BluetoothAdapter.getDefaultAdapter() is deprecated since API 31.
-            // Use BluetoothManager via context.getSystemService() instead.
-            val btAdapter = context.getSystemService(android.bluetooth.BluetoothManager::class.java)
-                ?.adapter
-                ?: throw Exception("BluetoothAdapter unavailable")
-            val btDevice = btAdapter.getRemoteDevice(peripheral.address)
-            control.connect(btDevice)
-        } catch (e: Exception) {
-            LogManager.w(TAG, "SprocketRfcomm connect failed: ${e.message} " +
-                    "(settings + printing via BT Classic unavailable)")
-        }
     }
 
     fun disconnect() {
@@ -742,9 +751,12 @@ class SprocketPrinter(private val context: Context) {
     // The BLE GATT channel handles status polling.
     // ---------------------------------------------------------------------------
     suspend fun print(bitmap: Bitmap, color: UserColor = UserColor.GREEN) {
+        // Printing runs over RFCOMM. If that channel is down the job cannot be
+        // printed — throw so the caller (the print queue) records a real failure
+        // instead of treating the call as success and silently dropping the job
+        // while decrementing the paper count.
         if (!control.isConnected) {
-            _state.value = SprocketState.Error("BT Classic socket not connected")
-            return
+            throw IllegalStateException("Printer not connected")
         }
 
         _state.value = SprocketState.Printing(0)
@@ -752,8 +764,7 @@ class SprocketPrinter(private val context: Context) {
             // Check printer status via BLE GATT before starting
             val probe = sendProbe()
             if (probe != null && !probe.printStatus.readyToPrint) {
-                _state.value = SprocketState.Error("Printer not ready: ${probe.printStatus}")
-                return
+                throw IllegalStateException("Printer not ready: ${probe.printStatus}")
             }
 
             // Prepare JPEG using model-specific dimensions
@@ -767,11 +778,15 @@ class SprocketPrinter(private val context: Context) {
             }
 
             LogManager.d(TAG, "Print complete!")
-            _state.value = SprocketState.Ready(_detectedModel)
 
         } catch (e: Exception) {
+            // Surface the failure to the caller. This is a print failure, not a
+            // link loss — the printer is still connected — so we rethrow and let
+            // the finally block restore Ready, keeping the connection pill correct.
             LogManager.e(TAG, "Print error: ${e.message}", e)
-            _state.value = SprocketState.Error(e.message ?: "Unknown error")
+            throw e
+        } finally {
+            _state.value = SprocketState.Ready(_detectedModel)
         }
     }
 
