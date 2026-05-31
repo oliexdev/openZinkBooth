@@ -99,6 +99,14 @@ class ZinkBoothViewModel(application: Application) : AndroidViewModel(applicatio
         // 2. Mirror SprocketPrinter.state → ZinkUiState
         viewModelScope.launch {
             printer.state.collect { s ->
+                // A pending Error→Disconnected reset must not clobber a connection
+                // that recovered within the 4s window (e.g. a successful reconnect).
+                // Cancel it as soon as any non-Error state arrives; the Error branch
+                // below reschedules it when needed.
+                if (s !is SprocketState.Error) {
+                    errorResetJob?.cancel()
+                    errorResetJob = null
+                }
                 when (s) {
                     is SprocketState.Disconnected ->
                         _state.update {

@@ -92,6 +92,20 @@ class FrameRepository(private val context: Context) {
     private val framesDir: File
         get() = File(context.filesDir, FRAMES_DIR).also { it.mkdirs() }
 
+    /**
+     * Returns a filename (without extension) derived from [base] that does not
+     * collide with an existing frame file. Falls back to "frame" when [base] is
+     * blank, and appends _2, _3, … on collision so a newly added or renamed
+     * frame never silently overwrites a different existing one.
+     */
+    private fun uniqueFilename(base: String): String {
+        val safe = base.ifBlank { "frame" }
+        if (!File(framesDir, "$safe.png").exists()) return safe
+        var i = 2
+        while (File(framesDir, "${safe}_$i.png").exists()) i++
+        return "${safe}_$i"
+    }
+
     // ---------------------------------------------------------------------------
     // Flow of the current frame list (built-ins + custom, in user-defined order)
     // ---------------------------------------------------------------------------
@@ -194,15 +208,17 @@ class FrameRepository(private val context: Context) {
         withContext(Dispatchers.IO) {
             try {
                 val sanitized = name.replace(Regex("[^a-zA-Z0-9_\\-]"), "_").take(40)
-                val file = File(framesDir, "$sanitized.png")
+                // Avoid overwriting an existing frame that maps to the same name.
+                val filename = uniqueFilename(sanitized)
+                val file = File(framesDir, "$filename.png")
                 context.contentResolver.openInputStream(uri)?.use { input ->
                     file.outputStream().use { output -> input.copyTo(output) }
                 } ?: return@withContext null
 
-                val entry = FrameEntry.Custom(sanitized)
+                val entry = FrameEntry.Custom(filename)
                 val current = currentList()
                 save(current + entry)
-                LogManager.d(TAG, "Added custom frame: $sanitized")
+                LogManager.d(TAG, "Added custom frame: $filename")
                 entry
             } catch (e: Exception) {
                 LogManager.e(TAG, "Failed to add custom frame: ${e.message}", e)
@@ -216,14 +232,26 @@ class FrameRepository(private val context: Context) {
     suspend fun renameCustomFrame(oldFilename: String, newName: String) =
         withContext(Dispatchers.IO) {
             val sanitized = newName.replace(Regex("[^a-zA-Z0-9_\\-]"), "_").take(40)
+            // Pick a target that doesn't clash with a different existing frame.
+            val targetName = if (sanitized == oldFilename) oldFilename else uniqueFilename(sanitized)
             val oldFile = File(framesDir, "$oldFilename.png")
-            val newFile = File(framesDir, "$sanitized.png")
-            if (oldFile.exists()) oldFile.renameTo(newFile)
+            val newFile = File(framesDir, "$targetName.png")
+
+            // Only adopt the new name if the file was actually renamed; otherwise
+            // keep the old name so the config never points at a missing file.
+            val finalName = when {
+                targetName == oldFilename        -> oldFilename
+                oldFile.exists() && oldFile.renameTo(newFile) -> targetName
+                else -> {
+                    LogManager.w(TAG, "Rename failed for '$oldFilename' → '$targetName'; keeping old name")
+                    oldFilename
+                }
+            }
 
             val current = currentList()
             save(current.map { e ->
                 if (e is FrameEntry.Custom && e.filename == oldFilename)
-                    e.copy(filename = sanitized)
+                    e.copy(filename = finalName)
                 else e
             })
         }
