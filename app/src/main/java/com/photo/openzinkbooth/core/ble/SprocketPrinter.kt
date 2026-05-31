@@ -566,8 +566,12 @@ class SprocketPrinter(private val context: Context) {
             return
         }
 
-        // Cancel the monitor so it does not re-fire while we are reconnecting.
-        connectionMonitorJob?.cancel()
+        // NOTE: do NOT cancel connectionMonitorJob here. This function runs
+        // *inside* that very coroutine, so cancelling it would abort the reconnect
+        // loop below at the first cancellation-aware suspend (connectPeripheral /
+        // delay) and leave the state stuck on "Connecting". The monitor's while
+        // loop already does `break` right after this call returns, so it cannot
+        // re-fire while we are reconnecting.
 
         // Clean up current session state without clearing lastPeripheral so
         // subsequent attempts can still use it.
@@ -590,6 +594,11 @@ class SprocketPrinter(private val context: Context) {
                 // a new monitor, so we simply return here on success.
                 LogManager.d(TAG, "Reconnect successful on attempt $attempt")
                 return
+            } catch (e: CancellationException) {
+                // A real cancellation (e.g. the user called disconnect() mid-
+                // reconnect) must abort cleanly — not be mistaken for a failed
+                // attempt or fall through to set the Error state.
+                throw e
             } catch (e: Exception) {
                 LogManager.w(TAG, "Reconnect attempt $attempt failed: ${e.message}")
                 // Clean up any partial state before the next attempt.

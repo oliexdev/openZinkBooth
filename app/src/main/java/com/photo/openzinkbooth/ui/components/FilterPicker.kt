@@ -285,18 +285,17 @@ private fun filterColorMatrix(filter: FilterType): ColorMatrix? = when (filter) 
         )))
     }
 
-    // hue-rotate(180°) saturate(0.7) brightness(1.05) – cool blue tones
+    // Cool blue tones: slight desaturation + a cooler colour temperature
+    // (pull red down a little, lift blue) for a clean, natural cool look.
     FilterType.COOL -> ColorMatrix().apply {
         // setSaturation() resets the entire matrix, so it must run FIRST;
-        // the channel-swap (approx. hue-rotate 180°) is concatenated after,
-        // otherwise it would be wiped out and COOL would only desaturate.
-        setSaturation(0.7f)
-        // Approximate hue rotate 180° via channel swap
+        // the temperature shift is concatenated after.
+        setSaturation(0.85f)
         postConcat(ColorMatrix(floatArrayOf(
-            -0.7f,  0f,   0.7f,  0f, 180f,
-            0f,    0.7f, 0f,    0f,   0f,
-            0.7f,  0f,  -0.7f,  0f, 180f,
-            0f,    0f,   0f,    1f,   0f
+            0.90f, 0f,    0f,    0f,  0f,
+            0f,    0.98f, 0f,    0f,  2f,
+            0f,    0f,    1.10f, 0f, 10f,
+            0f,    0f,    0f,    1f,  0f
         )))
     }
 }
