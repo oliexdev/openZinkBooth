@@ -438,12 +438,26 @@ class SprocketPrinter(private val context: Context) {
         checkNotError(ifConfigRsp, "IF_CONFIG")
         parseIfConfigRsp(ifConfigRsp)
 
-        // --- Step 4: CONN_SETUP ---
+        // --- Step 4: CONN_SETUP (tolerant of rejection) ---
+        // Some firmwares (e.g. Sprocket 200 M2L1FS2229AR) reject CONN_SETUP over
+        // BLE with ERROR 0x02. See https://github.com/oliexdev/openZinkBooth/issues/1
+        // The command is not essential for the BLE channel: the negotiated
+        // targetMaxMessageSize is only used for the BLE FILE_WRITE path, which is
+        // unused because printing and all settings run over RFCOMM. So on ERROR we
+        // just log and continue instead of aborting the whole session (which would
+        // skip the RFCOMM setup below and leave identity/config stuck on "Loading…").
+        // This mirrors the tolerant handling already done on the RFCOMM channel.
         val connSetupRsp = writeAndAwaitNotify(
             peripheral, writeChar!!, buildConnSetupReq(), "CONN_SETUP_REQ"
         )
-        checkNotError(connSetupRsp, "CONN_SETUP")
-        parseConnSetupRsp(connSetupRsp)
+        if (connSetupRsp.isNotEmpty() && connSetupRsp[0] == Cmd.ERROR) {
+            val payload = if (connSetupRsp.size > 1)
+                connSetupRsp.copyOfRange(1, connSetupRsp.size).toHexString() else "(empty)"
+            LogManager.w(TAG, "BLE CONN_SETUP rejected (payload=$payload); continuing " +
+                    "without it (legacy firmware quirk, issue #1)")
+        } else {
+            parseConnSetupRsp(connSetupRsp)
+        }
 
         // --- Step 5: Open BT Classic RFCOMM socket for settings + printing ---
         // Printing and all settings run exclusively over RFCOMM, so if this
