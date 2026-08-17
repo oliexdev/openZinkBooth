@@ -19,6 +19,8 @@
 package com.photo.openzinkbooth.ui.viewmodel
 
 import android.graphics.Bitmap
+import com.photo.openzinkbooth.core.pixelart.PixelArtAnalyzer
+import com.photo.openzinkbooth.core.pixelart.sprite.EquipmentRandomizer
 import android.net.Uri
 import com.photo.openzinkbooth.R
 import com.photo.openzinkbooth.core.ble.PrintStatus
@@ -41,7 +43,8 @@ enum class RemoteShutterKey(val keyCode: Int, val labelRes: Int) {
 // Navigation screens
 // ---------------------------------------------------------------------------
 enum class Screen {
-    CAMERA, PREVIEW, SETTINGS, PRINTER, PRINTER_CONFIG, ABOUT, FRAME_MANAGER
+    CAMERA, PREVIEW, SETTINGS, PRINTER, PRINTER_CONFIG, ABOUT, FRAME_MANAGER,
+    PIXEL_ART_PREVIEW  // Pixel Art mode preview screen
 }
 
 // ---------------------------------------------------------------------------
@@ -99,6 +102,16 @@ enum class PrinterConnectionState {
     BLUETOOTH_DISABLED,          // Bluetooth is turned off on the device
     BLUETOOTH_PERMISSION_DENIED, // BLUETOOTH_SCAN or BLUETOOTH_CONNECT not granted
     ERROR                        // transient; auto-reverts to DISCONNECTED after 4s
+}
+
+// ---------------------------------------------------------------------------
+// Pixel Art analysis state
+// ---------------------------------------------------------------------------
+enum class PixelArtAnalysisState {
+    IDLE,       // no analysis started
+    ANALYSING,  // pipeline running
+    DONE,       // analysis complete
+    ERROR,      // analysis failed
 }
 
 // ---------------------------------------------------------------------------
@@ -167,6 +180,15 @@ data class ZinkUiState(
     // ── Preview source ────────────────────────────────────────────────────────
     // True when PreviewScreen was opened via the photo picker (changes title)
     val previewFromPicker: Boolean   = false,
+
+    // ── Pixel Art Mode ────────────────────────────────────────────────────────
+    val pixelArtMode: Boolean                        = false,
+    val pixelArtAnalysisState: PixelArtAnalysisState = PixelArtAnalysisState.IDLE,
+    val pixelArtProgressText:  String                = "Initialising…",
+    val pixelArtResult: PixelArtAnalyzer.PixelArtResult? = null,
+    val pixelArtEquipped: Boolean                    = false,
+    val pixelArtEquipment: List<EquipmentRandomizer.Equipment> = emptyList(),
+    val pixelArtEquipmentSet: EquipmentRandomizer.EquipmentSet = EquipmentRandomizer.EquipmentSet.NONE,
 ) {
     // Convenience helpers used by TopBar components
     val printerConnected: Boolean

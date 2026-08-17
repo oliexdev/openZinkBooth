@@ -42,10 +42,15 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 import java.util.UUID
+import com.photo.openzinkbooth.core.pixelart.PixelArtAnalyzer
+import com.photo.openzinkbooth.core.pixelart.sprite.EquipmentRandomizer
+import com.photo.openzinkbooth.core.pixelart.stats.StatCalculator
+import org.opencv.android.OpenCVLoader
 
 class ZinkBoothViewModel(application: Application) : AndroidViewModel(application) {
 
     val printer  = SprocketPrinter(application)
+    private var pixelArtAnalyzer: PixelArtAnalyzer? = null
     private val settings = SettingsRepository(application)
     private val frameRepo = FrameRepository(application)
 
@@ -61,6 +66,11 @@ class ZinkBoothViewModel(application: Application) : AndroidViewModel(applicatio
     private var errorResetJob: Job? = null
 
     init {
+        // 0. Init OpenCV (required for PixelArt analyzers)
+        if (!OpenCVLoader.initLocal()) {
+            LogManager.e("ViewModel", "OpenCV init failed!")
+        }
+
         // 1. Load persisted settings
         viewModelScope.launch {
             settings.settings.collect { s ->
@@ -85,6 +95,7 @@ class ZinkBoothViewModel(application: Application) : AndroidViewModel(applicatio
                         calibrationVOffset   = s.calibrationVOffset,
                         remoteShutterEnabled = s.remoteShutterEnabled,
                         remoteShutterKey     = RemoteShutterKey.fromName(s.remoteShutterKey),
+                        pixelArtMode         = s.pixelArtMode,
                     )
                 }
                 // Push calibration values to printer immediately
@@ -240,6 +251,12 @@ class ZinkBoothViewModel(application: Application) : AndroidViewModel(applicatio
                         s.screen == Screen.FRAME_MANAGER ||
                         s.screen == Screen.PRINTER_CONFIG ->
                     s.copy(screen = Screen.SETTINGS)
+                s.screen == Screen.PIXEL_ART_PREVIEW ->
+                    s.copy(screen = Screen.CAMERA, pixelArtResult = null,
+                        pixelArtAnalysisState = PixelArtAnalysisState.IDLE,
+                        pixelArtEquipped     = false,
+                        pixelArtEquipment    = emptyList(),
+                        pixelArtEquipmentSet = EquipmentRandomizer.EquipmentSet.NONE)
                 s.screen != Screen.CAMERA ->
                     s.copy(screen = Screen.CAMERA, drawerOpen = false, previewFromPicker = false)
                 else -> s
@@ -285,13 +302,31 @@ class ZinkBoothViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun onPhotoCaptured(bitmap: Bitmap) {
+        // Play shutter sound if enabled
+        if (_state.value.shutterSoundEnabled) {
+            try {
+                android.media.MediaActionSound().play(android.media.MediaActionSound.SHUTTER_CLICK)
+            } catch (e: Exception) {
+                LogManager.w("ViewModel", "Shutter sound failed: ${e.message}")
+            }
+        }
+        val targetScreen = if (_state.value.pixelArtMode) Screen.PIXEL_ART_PREVIEW else Screen.PREVIEW
         _state.update {
             it.copy(
                 capturedPhoto      = bitmap,
-                screen             = Screen.PREVIEW,
+                screen             = targetScreen,
                 previewFromPicker  = false,
-                // Keep last filter/frame selection across captures
+                // Reset pixel art state for new photo
+                pixelArtResult     = null,
+                pixelArtAnalysisState = if (_state.value.pixelArtMode) PixelArtAnalysisState.IDLE else it.pixelArtAnalysisState,
+                pixelArtEquipped   = false,
+                pixelArtEquipment  = emptyList(),
+                pixelArtEquipmentSet = EquipmentRandomizer.EquipmentSet.NONE,
             )
+        }
+        // Auto-start analysis in pixel art mode
+        if (_state.value.pixelArtMode) {
+            startPixelArtAnalysis(bitmap)
         }
 
         // Save original (unfiltered) photo only when user has set a storage location
@@ -582,6 +617,24 @@ class ZinkBoothViewModel(application: Application) : AndroidViewModel(applicatio
      * normal photo + frame pipeline. Honours debugDryRun: if enabled, runs
      * prepareImage to populate lastPrintBitmap but does NOT actually print.
      */
+    /** Loads an image from assets and triggers the normal photo workflow. */
+    fun loadTestImage(filename: String) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                val bmp = getApplication<android.app.Application>()
+                    .assets.open(filename)
+                    .use { android.graphics.BitmapFactory.decodeStream(it) }
+                if (bmp != null) {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                        onPhotoCaptured(bmp)
+                    }
+                }
+            } catch (e: Exception) {
+                LogManager.e("ViewModel", "Failed to load test image: ${e.message}")
+            }
+        }
+    }
+
     fun printTestImage(bitmap: Bitmap) {
         viewModelScope.launch {
             try {
@@ -667,8 +720,180 @@ class ZinkBoothViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch { settings.setRemoteShutterKey(key.name) }
     fun setStorageUri(uri: Uri?)           = viewModelScope.launch { settings.setStorageUri(uri) }
 
+    // ---------------------------------------------------------------------------
+    // Pixel Art Mode
+    // ---------------------------------------------------------------------------
+
+    fun setPixelArtMode(enabled: Boolean) {
+        _state.update { it.copy(pixelArtMode = enabled) }
+        viewModelScope.launch { settings.setPixelArtMode(enabled) }
+        if (enabled) {
+            // Create analyzer and preload all models in background immediately
+            val analyzer = pixelArtAnalyzer ?: PixelArtAnalyzer(getApplication()).also {
+                pixelArtAnalyzer = it
+            }
+            viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                LogManager.d("PixelArt", "Preloading models in background…")
+                analyzer.preloadModels()
+                LogManager.d("PixelArt", "Models preloaded and ready")
+            }
+        } else {
+            // Release analyzer resources when mode is turned off
+            pixelArtAnalyzer?.release()
+            pixelArtAnalyzer = null
+        }
+    }
+
+    fun startPixelArtAnalysis(photo: Bitmap) {
+        val analyzer = pixelArtAnalyzer ?: PixelArtAnalyzer(getApplication()).also {
+            pixelArtAnalyzer = it
+        }
+        // Downscale to max 1080px — YuNet detects at 640px, BiSeNet at 512px crop
+        // so no quality is lost while saving significant RAM and processing time
+        val input = if (photo.width > 1080 || photo.height > 1080) {
+            val scale = 1080f / maxOf(photo.width, photo.height)
+            Bitmap.createScaledBitmap(
+                photo,
+                (photo.width  * scale).toInt(),
+                (photo.height * scale).toInt(),
+                true
+            )
+        } else photo
+        viewModelScope.launch {
+            _state.update { it.copy(pixelArtAnalysisState = PixelArtAnalysisState.ANALYSING) }
+            try {
+                val result = analyzer.analyze(input) { progressKey ->
+                    LogManager.d("PixelArt", progressKey)
+                    val ctx = getApplication<android.app.Application>()
+                    val text = when {
+                        progressKey.startsWith("pixelart_progress_analyse:") -> {
+                            val n = progressKey.substringAfter(":").toIntOrNull() ?: 1
+                            ctx.resources.getQuantityString(
+                                com.photo.openzinkbooth.R.plurals.pixelart_progress_analyse, n, n)
+                        }
+                        else -> try {
+                            val resId = ctx.resources.getIdentifier(
+                                progressKey, "string", ctx.packageName)
+                            if (resId != 0) ctx.getString(resId) else progressKey
+                        } catch (e: Exception) { progressKey }
+                    }
+                    _state.update { it.copy(pixelArtProgressText = text) }
+                }
+                _state.update {
+                    it.copy(
+                        pixelArtResult        = result,
+                        pixelArtAnalysisState = PixelArtAnalysisState.DONE,
+                    )
+                }
+            } catch (e: Exception) {
+                LogManager.e("PixelArt", "Analysis failed: ${e.message}", e)
+                _state.update { it.copy(pixelArtAnalysisState = PixelArtAnalysisState.ERROR) }
+            }
+        }
+    }
+
+    /** Apply a specific equipment set to all persons, or NONE to clear. */
+    fun selectEquipmentSet(set: EquipmentRandomizer.EquipmentSet) {
+        val result   = _state.value.pixelArtResult ?: return
+        val analyzer = pixelArtAnalyzer ?: return
+
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.Default) {
+            val isNone = set == EquipmentRandomizer.EquipmentSet.NONE
+            val equipmentNullable = result.allFeatures.map { features ->
+                if (isNone) null else EquipmentRandomizer.buildForSet(set, features)
+            }
+            val equipmentForState = equipmentNullable.filterNotNull()
+            val newStats   = result.allFeatures.map { StatCalculator.calculate(it, set) }
+            val newSprites = analyzer.generateSprites(result.allFeatures, equipmentNullable)
+            val newCanvas  = analyzer.buildSpriteCanvas(
+                result.originalPhoto, result.allFeatures, newSprites
+            )
+            val newResult = result.copy(spriteCanvas = newCanvas, stats = newStats)
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                _state.update {
+                    it.copy(
+                        pixelArtEquipped     = !isNone,
+                        pixelArtEquipment    = equipmentForState,
+                        pixelArtEquipmentSet = set,
+                        pixelArtResult       = newResult,
+                    )
+                }
+            }
+        }
+    }
+
+    /** Randomize equipment — each person gets a random class independently. */
+    fun randomizeEquipment() {
+        val result   = _state.value.pixelArtResult ?: return
+        val analyzer = pixelArtAnalyzer ?: return
+
+        val classes = EquipmentRandomizer.EquipmentSet.values()
+            .filter { it != EquipmentRandomizer.EquipmentSet.NONE }
+
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.Default) {
+            val perPersonSets = result.allFeatures.map { classes.random() }
+            val equipment = result.allFeatures.mapIndexed { i, features ->
+                EquipmentRandomizer.buildForSet(perPersonSets[i], features)
+            }
+            val newStats = result.allFeatures.mapIndexed { i, f ->
+                StatCalculator.calculate(f, perPersonSets[i])
+            }
+            val dominantSet = perPersonSets.groupBy { it }.maxByOrNull { it.value.size }?.key
+                ?: perPersonSets.first()
+            val newSprites = analyzer.generateSprites(result.allFeatures, equipment)
+            val newCanvas  = analyzer.buildSpriteCanvas(
+                result.originalPhoto, result.allFeatures, newSprites
+            )
+            val avgStats = if (newStats.size == 1) newStats else listOf(
+                PixelArtAnalyzer.CharacterStats(
+                    hp  = newStats.map { it.hp  }.average().toInt(),
+                    str = newStats.map { it.str }.average().toInt(),
+                    def = newStats.map { it.def }.average().toInt(),
+                    mag = newStats.map { it.mag }.average().toInt(),
+                    spd = newStats.map { it.spd }.average().toInt(),
+                )
+            )
+            val newResult = result.copy(spriteCanvas = newCanvas, stats = avgStats)
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                _state.update {
+                    it.copy(
+                        pixelArtEquipped     = true,
+                        pixelArtEquipment    = equipment,
+                        pixelArtEquipmentSet = dominantSet,
+                        pixelArtResult       = newResult,
+                    )
+                }
+            }
+        }
+    }
+
+    /** Enqueues a print job from the PixelArt preview screen. */
+    fun enqueuePrintFromPixelArt(compositedBitmap: Bitmap) {
+        val photo = _state.value.capturedPhoto ?: return
+        val job = PrintJob(
+            id               = UUID.randomUUID().toString(),
+            photo            = photo,
+            filter           = FilterType.ORIGINAL,
+            frame            = FrameType.NONE,
+            compositedBitmap = compositedBitmap,
+        )
+        _state.update {
+            it.copy(
+                printQueue            = it.printQueue + job,
+                screen                = Screen.CAMERA,
+                pixelArtResult        = null,
+                pixelArtAnalysisState = PixelArtAnalysisState.IDLE,
+                pixelArtEquipped      = false,
+                pixelArtEquipment     = emptyList(),
+                pixelArtEquipmentSet  = EquipmentRandomizer.EquipmentSet.NONE,
+            )
+        }
+        startPrintQueueIfIdle()
+    }
+
     override fun onCleared() {
         printer.disconnect()
+        pixelArtAnalyzer?.release()
         super.onCleared()
     }
 }

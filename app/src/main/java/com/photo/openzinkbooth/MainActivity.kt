@@ -21,6 +21,7 @@ package com.photo.openzinkbooth
 import android.app.Application
 import android.net.Uri
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -66,6 +67,7 @@ import com.photo.openzinkbooth.ui.viewmodel.ZinkBoothViewModel
 class ZinkBoothApplication : Application() {
     override fun onCreate() {
         super.onCreate()
+        Log.d("ASDASD", "Cascsa")
         // File logging enabled in DEBUG builds only
         LogManager.init(this, enableLoggingToFile = BuildConfig.DEBUG)
     }
@@ -397,7 +399,8 @@ fun ZinkBoothApp(
                     onToggleShutterSound      = viewModel::setShutterSound,
                     onStorageUriSelected      = viewModel::setStorageUri,
                     onToggleRemoteShutter     = viewModel::setRemoteShutterEnabled,
-                    onSetRemoteShutterKey     = viewModel::setRemoteShutterKey
+                    onSetRemoteShutterKey      = viewModel::setRemoteShutterKey,
+                    onTogglePixelArtMode       = viewModel::setPixelArtMode
                 )
 
                 Screen.PRINTER_CONFIG -> {
@@ -443,6 +446,25 @@ fun ZinkBoothApp(
                     )
                 }
 
+                Screen.PIXEL_ART_PREVIEW -> {
+                    val photo = state.capturedPhoto
+                    if (photo != null) {
+                        PixelArtPreviewScreen(
+                            state                = state,
+                            onBack               = viewModel::navigateBack,
+                            onSelectEquipment    = viewModel::selectEquipmentSet,
+                            onRandomizeEquipment = viewModel::randomizeEquipment,
+                            onPrint              = viewModel::enqueuePrintFromPixelArt,
+                            printerReady         = state.printerConnectionState ==
+                                    com.photo.openzinkbooth.ui.viewmodel.PrinterConnectionState.READY
+                                    || state.debugDryRun,
+                            windowSizeClass      = windowSizeClass,
+                        )
+                    } else {
+                        LaunchedEffect(Unit) { viewModel.navigateBack() }
+                    }
+                }
+
                 Screen.ABOUT -> {
                     val lastPrint by viewModel.lastPrintBitmap.collectAsState()
                     AboutScreen(
@@ -450,6 +472,7 @@ fun ZinkBoothApp(
                         lastPrintBitmap      = lastPrint,
                         debugDryRun          = state.debugDryRun,
                         onToggleDebugDryRun  = viewModel::toggleDebugDryRun,
+                        onLoadTestImage      = viewModel::loadTestImage,
                         onTestPrint          = viewModel::printTestImage,
                         printWidth           = state.printerPrintWidth,
                         printHeight          = state.printerPrintHeight

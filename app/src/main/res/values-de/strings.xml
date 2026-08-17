@@ -130,7 +130,7 @@
     <string name="frame_manager_type_builtin">Eingebaut</string>
     <string name="frame_manager_type_custom">Eigener</string>
     <string name="frame_manager_delete_title">Rahmen löschen</string>
-    <string name="frame_manager_delete_body">„%1$s“ löschen? Dies kann nicht rückgängig gemacht werden.</string>
+    <string name="frame_manager_delete_body">„%1$s" löschen? Dies kann nicht rückgängig gemacht werden.</string>
     <string name="frame_manager_delete_confirm">Löschen</string>
     <string name="frame_manager_drag_handle">Zum Sortieren ziehen</string>
     <string name="printer_config_title">Drucker-Einstellungen</string>
@@ -181,4 +181,22 @@
     <string name="dialog_set_value_title">Wert setzen</string>
     <string name="dialog_ok">OK</string>
     <string name="dialog_cancel">Abbrechen</string>
+    <string name="pixelart_title">Pixel Art</string>
+    <string name="pixelart_print">Drucken</string>
+    <string name="pixelart_transform">Verwandeln</string>
+    <string name="pixelart_close_description">Zurück</string>
+    <string name="pixelart_card_description">Pixel Art Vorschau</string>
+    <string name="pixelart_progress_init">Initialisiere…</string>
+    <string name="pixelart_progress_segment">Segmentiere…</string>
+    <string name="pixelart_progress_detect">Gesichtserkennung…</string>
+    <string name="pixelart_progress_generate">Generiere Sprites…</string>
+    <plurals name="pixelart_progress_analyse">
+        <item quantity="one">Analysiere %d Person…</item>
+        <item quantity="other">Analysiere %d Personen…</item>
+    </plurals>
+    <string name="settings_pixelart_group">Pixel Art</string>
+    <string name="settings_pixelart_mode">Pixel Art Modus</string>
+    <string name="pixelart_credits_show_authors">Autoren anzeigen (50)</string>
+    <string name="pixelart_credits_hide_authors">Autoren verbergen</string>
+    <string name="about_pixelart_credits">Pixel Art Credits</string>
 </resources>

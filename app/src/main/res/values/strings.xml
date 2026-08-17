@@ -130,7 +130,7 @@
     <string name="frame_manager_type_builtin">Built-in</string>
     <string name="frame_manager_type_custom">Custom</string>
     <string name="frame_manager_delete_title">Delete frame</string>
-    <string name="frame_manager_delete_body">Delete “%1$s”? This cannot be undone.</string>
+    <string name="frame_manager_delete_body">Delete "%1$s"? This cannot be undone.</string>
     <string name="frame_manager_delete_confirm">Delete</string>
     <string name="frame_manager_drag_handle">Drag to reorder</string>
     <string name="printer_config_title">Printer Settings</string>
@@ -181,4 +181,22 @@
     <string name="dialog_set_value_title">Set value</string>
     <string name="dialog_ok">OK</string>
     <string name="dialog_cancel">Cancel</string>
+    <string name="pixelart_title">Pixel Art</string>
+    <string name="pixelart_print">Print</string>
+    <string name="pixelart_transform">Transform</string>
+    <string name="pixelart_close_description">Back</string>
+    <string name="pixelart_card_description">Pixel Art Preview</string>
+    <string name="pixelart_progress_init">Initialising…</string>
+    <string name="pixelart_progress_segment">Segmenting…</string>
+    <string name="pixelart_progress_detect">Detecting faces…</string>
+    <string name="pixelart_progress_generate">Generating sprites…</string>
+    <plurals name="pixelart_progress_analyse">
+        <item quantity="one">Analysing %d person…</item>
+        <item quantity="other">Analysing %d persons…</item>
+    </plurals>
+    <string name="settings_pixelart_group">Pixel Art</string>
+    <string name="settings_pixelart_mode">Pixel Art Mode</string>
+    <string name="pixelart_credits_show_authors">Show authors (50)</string>
+    <string name="pixelart_credits_hide_authors">Hide authors</string>
+    <string name="about_pixelart_credits">Pixel Art Credits</string>
 </resources>

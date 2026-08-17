@@ -65,6 +65,7 @@ data class SettingsData(
     // Bluetooth remote shutter
     val remoteShutterEnabled: Boolean = false,
     val remoteShutterKey: String      = "VOLUME_UP",
+    val pixelArtMode: Boolean         = false,
 ) {
     val storageUri: Uri? get() = storageUriString?.toUri()
 }
@@ -91,6 +92,7 @@ class SettingsRepository(private val context: Context) {
         private val KEY_CALIB_V_OFFSET     = intPreferencesKey("calib_v_offset")
         private val KEY_REMOTE_SHUTTER     = booleanPreferencesKey("remote_shutter_enabled")
         private val KEY_REMOTE_SHUTTER_KEY = stringPreferencesKey("remote_shutter_key")
+        private val KEY_PIXEL_ART_MODE     = booleanPreferencesKey("pixel_art_mode")
     }
 
     val settings: Flow<SettingsData> = context.dataStore.data
@@ -115,6 +117,7 @@ class SettingsRepository(private val context: Context) {
                 calibrationVOffset    = prefs[KEY_CALIB_V_OFFSET]  ?: 46,
                 remoteShutterEnabled  = prefs[KEY_REMOTE_SHUTTER]  ?: false,
                 remoteShutterKey      = prefs[KEY_REMOTE_SHUTTER_KEY] ?: RemoteShutterKey.VOLUME_UP.name,
+                pixelArtMode          = prefs[KEY_PIXEL_ART_MODE]      ?: false,
             )
         }
 
@@ -162,6 +165,9 @@ class SettingsRepository(private val context: Context) {
         val current = prefs[KEY_PAPER_COUNT] ?: -1
         if (current > 0) prefs[KEY_PAPER_COUNT] = current - 1
     }
+
+    suspend fun setPixelArtMode(enabled: Boolean) =
+        context.dataStore.edit { it[KEY_PIXEL_ART_MODE] = enabled }
 
     suspend fun setFilter(filter: String) =
         context.dataStore.edit { it[KEY_FILTER] = filter }

@@ -41,6 +41,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -63,6 +67,7 @@ fun SettingsScreen(
     onStorageUriSelected: (Uri?) -> Unit,
     onToggleRemoteShutter: (Boolean) -> Unit,
     onSetRemoteShutterKey: (RemoteShutterKey) -> Unit,
+    onTogglePixelArtMode: (Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -146,6 +151,13 @@ fun SettingsScreen(
                 }
                 HorizontalDivider(modifier = Modifier.padding(start = 56.dp))
                 SettingsToggleRow(
+                    icon     = Icons.Outlined.VolumeUp,
+                    label    = stringResource(R.string.settings_shutter_sound),
+                    checked  = state.shutterSoundEnabled,
+                    onToggle = onToggleShutterSound
+                )
+                HorizontalDivider(modifier = Modifier.padding(start = 56.dp))
+                SettingsToggleRow(
                     icon     = Icons.Outlined.SettingsRemote,
                     label    = stringResource(R.string.settings_remote_shutter_enabled),
                     checked  = state.remoteShutterEnabled,
@@ -176,17 +188,18 @@ fun SettingsScreen(
             }
 
             SettingsGroup(title = stringResource(R.string.settings_group_app)) {
-                SettingsToggleRow(
-                    icon     = Icons.Outlined.VolumeUp,
-                    label    = stringResource(R.string.settings_shutter_sound),
-                    checked  = state.shutterSoundEnabled,
-                    onToggle = onToggleShutterSound
-                )
-                HorizontalDivider(modifier = Modifier.padding(start = 56.dp))
                 StorageLocationRow(
                     storageUri = state.storageUri,
                     onPick     = { folderPicker.launch(state.storageUri) },
                     onClear    = { onStorageUriSelected(null) }
+                )
+            }
+
+            // ── Pixel Art Mode ────────────────────────────────────────────────────
+            SettingsGroup(title = stringResource(R.string.settings_pixelart_group)) {
+                PixelArtSettingsRow(
+                    checked  = state.pixelArtMode,
+                    onToggle = onTogglePixelArtMode,
                 )
             }
 
@@ -216,6 +229,79 @@ private fun SettingsGroup(
             modifier = Modifier.fillMaxWidth()
         ) {
             Column { content() }
+        }
+    }
+}
+
+@Composable
+private fun PixelArtSettingsRow(
+    checked:  Boolean,
+    onToggle: (Boolean) -> Unit,
+) {
+    // Star positions — stable across recompositions
+    data class Star(val x: Float, val y: Float, val size: Float)
+    val stars = remember {
+        (0 until 10).map {
+            Star(
+                x    = (5..95).random() / 100f,
+                y    = (5..95).random() / 100f,
+                size = (5..10).random().toFloat(),
+            )
+        }
+    }
+
+    val transition = rememberInfiniteTransition(label = "pixelArtStars")
+    val time by transition.animateFloat(
+        initialValue  = 0f,
+        targetValue   = 1f,
+        animationSpec = infiniteRepeatable(
+            animation  = androidx.compose.animation.core.tween(4800, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "starTime",
+    )
+    val starAlphas = stars.mapIndexed { i, _ ->
+        val t = ((time + i / stars.size.toFloat()) % 1f)
+        if (t < 0.5f) t * 2f else (1f - t) * 2f
+    }
+
+    val goldColor = if (isSystemInDarkTheme()) Color(0xFFFFD700)   // bright gold in dark mode
+    else                       Color(0xFFB8860B)   // dark goldenrod in light mode
+
+    Box {
+        SettingsToggleRow(
+            icon     = Icons.Outlined.AutoAwesome,
+            label    = stringResource(R.string.settings_pixelart_mode),
+            checked  = checked,
+            onToggle = onToggle,
+        )
+        // Stars always animated
+        Canvas(
+            modifier = Modifier
+                .matchParentSize()
+                .padding(end = 56.dp), // avoid overlap with switch
+        ) {
+            stars.forEachIndexed { i, star ->
+                val alpha = starAlphas[i]
+                if (alpha > 0.05f) {
+                    val cx = size.width  * star.x
+                    val cy = size.height * star.y
+                    val s  = star.size * alpha
+                    drawLine(goldColor.copy(alpha = alpha),
+                        start = Offset(cx, cy - s), end = Offset(cx, cy + s),
+                        strokeWidth = s * 0.3f)
+                    drawLine(goldColor.copy(alpha = alpha),
+                        start = Offset(cx - s, cy), end = Offset(cx + s, cy),
+                        strokeWidth = s * 0.3f)
+                    val d = s * 0.5f
+                    drawLine(goldColor.copy(alpha = alpha * 0.5f),
+                        start = Offset(cx - d, cy - d), end = Offset(cx + d, cy + d),
+                        strokeWidth = s * 0.2f)
+                    drawLine(goldColor.copy(alpha = alpha * 0.5f),
+                        start = Offset(cx + d, cy - d), end = Offset(cx - d, cy + d),
+                        strokeWidth = s * 0.2f)
+                }
+            }
         }
     }
 }

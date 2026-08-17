@@ -18,6 +18,10 @@ android {
         versionName = "0.6"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+        }
     }
 
     dependenciesInfo {
@@ -94,6 +98,10 @@ android {
         compose = true
         buildConfig = true
     }
+
+    androidResources {
+        noCompress += listOf("onnx", "tflite", "pb")
+    }
 }
 
 val appVersionName = android.defaultConfig.versionName
@@ -154,6 +162,9 @@ dependencies {
 
     // Persistent settings
     implementation(libs.androidx.datastore.preferences)
+
+    // OpenCV: DNN (ONNX inference), image processing, face detection
+    implementation(libs.opencv)
 
     testImplementation(libs.junit)
 

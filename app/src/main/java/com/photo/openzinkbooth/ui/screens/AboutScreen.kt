@@ -33,6 +33,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Launch
 import androidx.compose.material.icons.outlined.*
+import android.graphics.BitmapFactory
+import androidx.compose.foundation.border
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.graphics.asImageBitmap
@@ -63,6 +71,7 @@ fun AboutScreen(
     debugDryRun: Boolean = false,
     onToggleDebugDryRun: () -> Unit = {},
     onTestPrint: (Bitmap) -> Unit = {},
+    onLoadTestImage: (String) -> Unit = {},
     printWidth: Int = 640,
     printHeight: Int = 1002,
     modifier: Modifier = Modifier
@@ -150,6 +159,81 @@ fun AboutScreen(
                 }
             )
 
+            // ── Pixel Art credits ─────────────────────────────────────────────
+            Spacer(modifier = Modifier.height(8.dp))
+            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+            Spacer(modifier = Modifier.height(8.dp))
+            AboutSectionTitle(text = stringResource(R.string.about_pixelart_credits))
+
+            AboutListItem(
+                icon       = Icons.Outlined.Palette,
+                headline   = "LPC Sprites",
+                supporting = "Universal LPC Spritesheet Character Generator — CC-BY-SA 3.0",
+                url        = "https://opengameart.org/content/lpc-collection",
+                onOpenUrl  = { url ->
+                    try { uriHandler.openUri(url) }
+                    catch (e: Exception) { LogManager.e("AboutScreen", "Cannot open URL: $url", e) }
+                }
+            )
+
+            // Collapsible LPC authors
+            var authorsExpanded by remember { mutableStateOf(false) }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { authorsExpanded = !authorsExpanded }
+                    .padding(start = 56.dp, end = 16.dp, top = 0.dp, bottom = 4.dp)
+                    .offset(y = (-8).dp),
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+            ) {
+                Text(
+                    text     = stringResource(if (authorsExpanded) R.string.pixelart_credits_hide_authors else R.string.pixelart_credits_show_authors),
+                    style    = MaterialTheme.typography.labelMedium,
+                    color    = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.weight(1f),
+                )
+                Icon(
+                    imageVector        = if (authorsExpanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                    contentDescription = null,
+                    tint               = MaterialTheme.colorScheme.primary,
+                )
+            }
+            if (authorsExpanded) {
+                Text(
+                    text = "Johannes Sjölund (wulax), Michael Whitlock (bigbeargames), " +
+                            "Matthew Krohn (makrohn), Nila122, David Conway Jr. (JaidynReiman), " +
+                            "Carlo Enrico Victoria (Nemisys), Thane Brimhall (pennomi), laetissima, " +
+                            "bluecarrot16, Luke Mehl, Benjamin K. Smith (BenCreating), MuffinElZangano, " +
+                            "Durrani, kheftel, Stephen Challener (Redshrike), William.Thompsonj, " +
+                            "Marcel van de Steeg (MadMarcel), TheraHedwig, Evert, Pierre Vigier (pvigier), " +
+                            "Eliza Wyatt (ElizaWy), Sander Frenken (castelonia), dalonedrau, " +
+                            "Lanea Zimmerman (Sharm), Manuel Riecke (MrBeast), Barbara Riviera, " +
+                            "Joe White, Mandi Paugh, Shaun Williams, Daniel Eddeland (daneeklu), " +
+                            "Emilio J. Sanchez-Sierra, drjamgo, gr3yh47, tskaufma, Fabzy, Yamilian, " +
+                            "Skorpio, Tuomo Untinen (reemax), Tracy, thecilekli, LordNeo, " +
+                            "Stafford McIntyre, PlatForge project, DCSS authors, DarkwallLKE, " +
+                            "Charles Sanchez (CharlesGabriel), Radomir Dopieralski, macmanmatty, " +
+                            "Cobra Hubbard (BlueVortexGames), Inboxninja, kcilds/Rocetti/Eredah, " +
+                            "Napsio (Vitruvian Studio), The Foreman, AntumDeluge",
+                    style    = MaterialTheme.typography.bodySmall,
+                    color    = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 72.dp, end = 16.dp, bottom = 8.dp),
+                )
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+            AboutListItem(
+                icon       = Icons.Outlined.Palette,
+                headline   = "Pixel Art Backgrounds",
+                supporting = "freepixel.art — free for personal & commercial use, no attribution required",
+                url        = "https://freepixel.art/browse/backgrounds",
+                onOpenUrl  = { url ->
+                    try { uriHandler.openUri(url) }
+                    catch (e: Exception) { LogManager.e("AboutScreen", "Cannot open URL: $url", e) }
+                }
+            )
+
+
             // ── Debug tools (DEBUG builds only) ──────────────────────────────
             if (BuildConfig.DEBUG) {
                 Spacer(modifier = Modifier.height(8.dp))
@@ -160,6 +244,9 @@ fun AboutScreen(
                     text  = stringResource(R.string.about_debug_title),
                     color = MaterialTheme.colorScheme.error
                 )
+
+                TestImagePicker(onLoadTestImage = onLoadTestImage)
+
 
                 // Dry-run toggle – skips actual printing, stores bitmap for preview
                 ListItem(
@@ -294,6 +381,89 @@ private fun DebugTools() {
 // ---------------------------------------------------------------------------
 // Reusable sub-components
 // ---------------------------------------------------------------------------
+
+
+// ---------------------------------------------------------------------------
+// Test image picker – thumbnail row + load button
+// ---------------------------------------------------------------------------
+
+@Composable
+private fun TestImagePicker(onLoadTestImage: (String) -> Unit) {
+    val context  = androidx.compose.ui.platform.LocalContext.current
+    val images   = listOf(
+        "images/test_family_1.jpg",
+        "images/test_person_1.jpg",
+        "images/test_person_2.jpg",
+        "images/test_person_3.jpg",
+        "images/test_person_4.jpg",
+    )
+    var selected by remember { mutableStateOf(images.first()) }
+
+    Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+
+        // Thumbnail row
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            items(images) { filename ->
+                val bmp = remember(filename) {
+                    runCatching {
+                        context.assets.open(filename)
+                            .use { BitmapFactory.decodeStream(it) }
+                    }.getOrNull()
+                }
+                val isSelected = filename == selected
+                Box(
+                    modifier = Modifier
+                        .size(72.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .border(
+                            width = if (isSelected) 3.dp else 1.dp,
+                            color = if (isSelected)
+                                MaterialTheme.colorScheme.error
+                            else
+                                MaterialTheme.colorScheme.outline,
+                            shape = RoundedCornerShape(8.dp)
+                        )
+                        .clickable { selected = filename },
+                ) {
+                    if (bmp != null) {
+                        androidx.compose.foundation.Image(
+                            bitmap           = bmp.asImageBitmap(),
+                            contentDescription = filename,
+                            contentScale     = ContentScale.Crop,
+                            modifier         = Modifier.fillMaxSize(),
+                        )
+                    } else {
+                        Box(
+                            Modifier.fillMaxSize()
+                                .background(MaterialTheme.colorScheme.surfaceVariant),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text("?", style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
+
+        // Load button
+        OutlinedButton(
+            onClick  = { onLoadTestImage(selected) },
+            modifier = Modifier.fillMaxWidth(),
+            colors   = ButtonDefaults.outlinedButtonColors(
+                contentColor = MaterialTheme.colorScheme.error
+            )
+        ) {
+            Icon(Icons.Outlined.Image, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text("Load: $selected", style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
 
 @Composable
 private fun AboutSectionTitle(
